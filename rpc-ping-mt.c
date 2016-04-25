@@ -68,6 +68,7 @@ int main(int argc, char *argv[]) {
     int version;
     int nthreads = 1;
     double avarage;
+    AUTH *cl_auth;
 
     if (argc < 4 || argc > 5) {
         printf("Usage: rpcping <host> <program> <version> [nthreads]\n");
@@ -89,6 +90,7 @@ int main(int argc, char *argv[]) {
      */
     programm = atoi(argv[2]);
     version = atoi(argv[3]);
+    cl_auth = authunix_create_default();
 
     while (1) {
         running = nthreads;
@@ -96,6 +98,7 @@ int main(int argc, char *argv[]) {
             pthread_t t;
             s = &states[i];
             s->handle = clnt_create(argv[1], programm, version, "tcp");
+
             if (s->handle == NULL) {
                 perror("clnt failed");
                 exit(2);
@@ -104,6 +107,8 @@ int main(int argc, char *argv[]) {
             s->id = i;
             s->count = count;
             s->proc = 0;
+            s->handle->cl_auth = cl_auth;
+
             pthread_create(&t, NULL, worker, s);
         }
 
@@ -120,4 +125,6 @@ int main(int argc, char *argv[]) {
         fprintf(stdout, "Speed:  %2.4fs, %2.4fs in total\n", avarage, avarage * nthreads);
         fflush(stdout);
     }
+    auth_destroy(cl_auth);
+
 }
