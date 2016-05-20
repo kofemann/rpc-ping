@@ -46,8 +46,8 @@ void * worker(void *arg) {
         status = clnt_call(s->handle, s->proc, (xdrproc_t) xdr_void,
                 NULL, (xdrproc_t) xdr_void, NULL, t);
 
-        if (status == RPC_SUCCESS) {
-            /* NOP */
+        if (status != RPC_SUCCESS) {
+            clnt_perror(s->handle, "rpc error");
         }
     }
 
