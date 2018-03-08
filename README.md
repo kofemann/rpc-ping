@@ -9,6 +9,6 @@ Compile:
 gcc -g -Wall -pedantic rpc-ping-mt.c -lpthread
 
 
-Licese:
+License:
 -------
 Public Domain.
