@@ -69,17 +69,22 @@ int main(int argc, char *argv[]) {
     int programm;
     int version;
     int nthreads = 1;
+    int nloops = 1;
     double avarageRPS;
     double avarageTime;
     AUTH *cl_auth;
 
-    if (argc < 4 || argc > 5) {
-        printf("Usage: rpcping <host> <program> <version> [nthreads]\n");
+    if (argc < 4 || argc > 6) {
+        printf("Usage: rpcping <host> <program> <version> [nthreads] [nloops]\n");
         exit(1);
     }
 
     if (argc == 5) {
         nthreads = atoi(argv[4]);
+    }
+
+    if (argc == 6) {
+        nloops = atoi(argv[5]);
     }
 
     states = calloc(nthreads, sizeof (struct state));
@@ -95,7 +100,7 @@ int main(int argc, char *argv[]) {
     version = atoi(argv[3]);
     cl_auth = authunix_create_default();
 
-    while (1) {
+    do {
         running = nthreads;
         for (i = 0; i < nthreads; i++) {
             pthread_t t;
@@ -132,7 +137,7 @@ int main(int argc, char *argv[]) {
         fprintf(stdout, "Speed:  %2.2f rps in %2.2fs (%2.4f s per request), %2.2f rps in total\n",
             avarageRPS, avarageTime, avarageTime/avarageRPS, avarageRPS * nthreads);
         fflush(stdout);
-    }
+    } while(--nloops > 0);
     auth_destroy(cl_auth);
 
 }
