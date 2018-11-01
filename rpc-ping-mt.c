@@ -100,7 +100,7 @@ int main(int argc, char *argv[]) {
             s->handle = clnt_create(argv[1], programm, version, "tcp");
 
             if (s->handle == NULL) {
-                perror("clnt failed");
+                clnt_pcreateerror("clnt failed");
                 exit(2);
             }
 
