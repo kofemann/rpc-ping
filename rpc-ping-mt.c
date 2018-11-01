@@ -17,6 +17,7 @@ struct state {
     /* RPC */
     int proc;
     double avarageTime;
+    double avarageRPS;
 };
 
 static void worker_done() {
@@ -31,7 +32,7 @@ void * worker(void *arg) {
     struct state *s = arg;
     enum clnt_stat status;
     clock_t rtime;
-    struct tms dumm;
+    struct tms dummy;
     struct timeval t;
     int i;
 
@@ -41,7 +42,7 @@ void * worker(void *arg) {
     t.tv_sec = 30;
     t.tv_usec = 0;
 
-    rtime = times(&dumm);
+    rtime = times(&dummy);
     for (i = 0; i < s->count; i++) {
         status = clnt_call(s->handle, s->proc, (xdrproc_t) xdr_void,
                 NULL, (xdrproc_t) xdr_void, NULL, t);
@@ -51,8 +52,9 @@ void * worker(void *arg) {
         }
     }
 
-    s->avarageTime = s->count / ((double) (times(&dumm) - rtime) / (double) sysconf(_SC_CLK_TCK));
-    
+    s->avarageTime = ((double) (times(&dummy) - rtime) / (double) sysconf(_SC_CLK_TCK));
+    s->avarageRPS = s->count / s->avarageTime;
+
     clnt_destroy(s->handle);
     worker_done();
     return NULL;
@@ -67,7 +69,8 @@ int main(int argc, char *argv[]) {
     int programm;
     int version;
     int nthreads = 1;
-    double avarage;
+    double avarageRPS;
+    double avarageTime;
     AUTH *cl_auth;
 
     if (argc < 4 || argc > 5) {
@@ -116,13 +119,18 @@ int main(int argc, char *argv[]) {
             pthread_cond_wait(&rncond, &rnmtx);
         }
 
-        avarage = 0.0;
+        avarageRPS = 0.0;
+        avarageTime = 0.0;
         for (i = 0; i < nthreads; i++) {
             s = &states[i];
-            avarage += s->avarageTime;
+            avarageRPS += s->avarageRPS;
+            avarageTime += s->avarageTime;
         }
-        avarage = avarage / nthreads;
-        fprintf(stdout, "Speed:  %2.4fs, %2.4fs in total\n", avarage, avarage * nthreads);
+        avarageTime = avarageTime / nthreads;
+        avarageRPS = avarageRPS / nthreads;
+
+        fprintf(stdout, "Speed:  %2.2f rps in %2.2fs (%2.4f s per request), %2.2f rps in total\n",
+            avarageRPS, avarageTime, avarageTime/avarageRPS, avarageRPS * nthreads);
         fflush(stdout);
     }
     auth_destroy(cl_auth);
