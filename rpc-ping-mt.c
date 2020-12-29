@@ -85,11 +85,11 @@ int main(int argc, char *argv[]) {
         exit(1);
     }
 
-    if (argc == 6) {
+    if (argc > 5) {
         nthreads = atoi(argv[5]);
     }
 
-    if (argc == 7) {
+    if (argc > 6) {
         nloops = atoi(argv[6]);
     }
 
