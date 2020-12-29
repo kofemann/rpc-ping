@@ -5,36 +5,24 @@
 #include <pthread.h>
 #include <netdb.h>
 #include <arpa/inet.h>
-
-static pthread_mutex_t rnmtx = PTHREAD_MUTEX_INITIALIZER;
-static pthread_cond_t rncond = PTHREAD_COND_INITIALIZER;
-static volatile unsigned running;
+#include <semaphore.h>
 
 struct state {
     unsigned long requests;
     CLIENT *handle;
     int id;
     int count;
+    pthread_t thread;
+    sem_t go;
 
     /* RPC */
     int proc;
-    double avarageTime;
-    double avarageRPS;
 };
-
-static void worker_done() {
-    pthread_mutex_lock(&rnmtx);
-    --running;
-    pthread_mutex_unlock(&rnmtx);
-    pthread_cond_broadcast(&rncond);
-}
 
 void * worker(void *arg) {
 
     struct state *s = arg;
     enum clnt_stat status;
-    clock_t rtime;
-    struct tms dummy;
     struct timeval t;
     int i;
 
@@ -44,7 +32,11 @@ void * worker(void *arg) {
     t.tv_sec = 30;
     t.tv_usec = 0;
 
-    rtime = times(&dummy);
+    if (sem_wait(&s->go) != 0) {
+        perror("sem_wait");
+        exit(1);
+    }
+
     for (i = 0; i < s->count; i++) {
         status = clnt_call(s->handle, s->proc, (xdrproc_t) xdr_void,
                 NULL, (xdrproc_t) xdr_void, NULL, t);
@@ -54,11 +46,6 @@ void * worker(void *arg) {
         }
     }
 
-    s->avarageTime = ((double) (times(&dummy) - rtime) / (double) sysconf(_SC_CLK_TCK));
-    s->avarageRPS = s->count / s->avarageTime;
-
-    clnt_destroy(s->handle);
-    worker_done();
     return NULL;
 }
 
@@ -72,13 +59,14 @@ int main(int argc, char *argv[]) {
     int version;
     int nthreads = 1;
     int nloops = 1;
-    double avarageRPS;
-    double avarageTime;
+    double duration;
     AUTH *cl_auth;
     struct sockaddr_in serv_addr;
     int sock_fd;
     int port;
     struct hostent *hp;
+    clock_t rtime;
+    struct tms dummy;
 
     if (argc < 5 || argc > 7) {
         printf("Usage: rpcping <host> <port> <program> <version> [nthreads] [nloops]\n");
@@ -130,9 +118,14 @@ int main(int argc, char *argv[]) {
     }
 
     do {
-        running = nthreads;
+        sem_t go;
+        if (sem_init(&go, 0, nthreads) != 0) {
+            perror("sem_init");
+            exit(1);
+        }
+
         for (i = 0; i < nthreads; i++) {
-            pthread_t t;
+
             s = &states[i];
             s->handle = clnttcp_create(&serv_addr, programm, version, &sock_fd, 0, 0);
 
@@ -145,27 +138,31 @@ int main(int argc, char *argv[]) {
             s->count = count;
             s->proc = 0;
             s->handle->cl_auth = cl_auth;
+            s->go = go;
 
-            pthread_create(&t, NULL, worker, s);
+            pthread_create(&s->thread, NULL, worker, s);
+            if (sem_post(&go) != 0) {
+                perror("sem_post");
+                exit(1);
+            }
         }
 
-        while (running) {
-            pthread_cond_wait(&rncond, &rnmtx);
-        }
+        rtime = times(&dummy);
 
-        avarageRPS = 0.0;
-        avarageTime = 0.0;
         for (i = 0; i < nthreads; i++) {
-            s = &states[i];
-            avarageRPS += s->avarageRPS;
-            avarageTime += s->avarageTime;
+            pthread_join(states[i].thread, NULL);
         }
-        avarageTime = avarageTime / nthreads;
-        avarageRPS = avarageRPS / nthreads;
 
-        fprintf(stdout, "Speed:  %2.2f rps in %2.2fs (%2.4f s per request), %2.2f rps in total\n",
-            avarageRPS, avarageTime, avarageTime/avarageRPS, avarageRPS * nthreads);
+        duration = ((double) (times(&dummy) - rtime) / (double) sysconf(_SC_CLK_TCK));
+
+        fprintf(stdout, "Speed:  %2.2f rps in %2.2fs (%2.4f ms per request), %d in total\n",
+            (double)count*nthreads / duration, duration, duration*1000/count*nthreads, count * nthreads);
         fflush(stdout);
+
+        for (i = 0; i < nthreads; i++) {
+            clnt_destroy(states[i].handle);
+        }
+
     } while(--nloops > 0);
     auth_destroy(cl_auth);
 
