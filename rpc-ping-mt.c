@@ -3,6 +3,8 @@
 #include <unistd.h>
 #include <sys/times.h>
 #include <pthread.h>
+#include <netdb.h>
+#include <arpa/inet.h>
 
 static pthread_mutex_t rnmtx = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t rncond = PTHREAD_COND_INITIALIZER;
@@ -73,18 +75,22 @@ int main(int argc, char *argv[]) {
     double avarageRPS;
     double avarageTime;
     AUTH *cl_auth;
+    struct sockaddr_in serv_addr;
+    int sock_fd;
+    int port;
+    struct hostent *hp;
 
-    if (argc < 4 || argc > 6) {
-        printf("Usage: rpcping <host> <program> <version> [nthreads] [nloops]\n");
+    if (argc < 5 || argc > 7) {
+        printf("Usage: rpcping <host> <port> <program> <version> [nthreads] [nloops]\n");
         exit(1);
     }
 
-    if (argc == 5) {
-        nthreads = atoi(argv[4]);
+    if (argc == 6) {
+        nthreads = atoi(argv[5]);
     }
 
-    if (argc == 6) {
-        nloops = atoi(argv[5]);
+    if (argc == 7) {
+        nloops = atoi(argv[6]);
     }
 
     states = calloc(nthreads, sizeof (struct state));
@@ -96,16 +102,39 @@ int main(int argc, char *argv[]) {
     /*
      *   Create Client Handle
      */
-    programm = atoi(argv[2]);
-    version = atoi(argv[3]);
+    programm = atoi(argv[3]);
+    version = atoi(argv[4]);
+    port = atoi(argv[2]);
     cl_auth = authunix_create_default();
+
+    memset((char *) &serv_addr, 0, sizeof(serv_addr));
+
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_port = htons(port);
+
+    // try by hostname first
+    hp = (struct hostent *) gethostbyname(argv[1]);
+    if (hp) {
+        memcpy( &serv_addr.sin_addr.s_addr, hp->h_addr_list[0], hp->h_length);
+    } else {
+        if ((serv_addr.sin_addr.s_addr = inet_addr(argv[1])) < 0) {
+            perror("resolve");
+            exit(1);
+        }
+    }
+
+    sock_fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sock_fd < 0) {
+        perror("socket");
+        exit(1);
+    }
 
     do {
         running = nthreads;
         for (i = 0; i < nthreads; i++) {
             pthread_t t;
             s = &states[i];
-            s->handle = clnt_create(argv[1], programm, version, "tcp");
+            s->handle = clnttcp_create(&serv_addr, programm, version, &sock_fd, 0, 0);
 
             if (s->handle == NULL) {
                 clnt_pcreateerror("clnt failed");
