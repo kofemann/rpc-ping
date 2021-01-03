@@ -6,6 +6,7 @@
 #include <netdb.h>
 #include <arpa/inet.h>
 #include <semaphore.h>
+#include <netinet/tcp.h>
 
 struct state {
     unsigned long requests;
@@ -59,6 +60,7 @@ int main(int argc, char *argv[]) {
     int version;
     int nthreads = 1;
     int nloops = 1;
+    int no_delay = 1;
     double duration;
     AUTH *cl_auth;
     struct sockaddr_in serv_addr;
@@ -114,6 +116,11 @@ int main(int argc, char *argv[]) {
     sock_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (sock_fd < 0) {
         perror("socket");
+        exit(1);
+    }
+
+    if (setsockopt(sock_fd, IPPROTO_TCP, TCP_NODELAY, &no_delay, sizeof(no_delay)) != 0) {
+        perror("setsockopt");
         exit(1);
     }
 
