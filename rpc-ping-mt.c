@@ -10,6 +10,7 @@
 
 struct state {
     unsigned long requests;
+    int sock_fd;
     CLIENT *handle;
     int id;
     int count;
@@ -64,7 +65,6 @@ int main(int argc, char *argv[]) {
     double duration;
     AUTH *cl_auth;
     struct sockaddr_in serv_addr;
-    int sock_fd;
     int port;
     struct hostent *hp;
     clock_t rtime;
@@ -113,17 +113,6 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    sock_fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (sock_fd < 0) {
-        perror("socket");
-        exit(1);
-    }
-
-    if (setsockopt(sock_fd, IPPROTO_TCP, TCP_NODELAY, &no_delay, sizeof(no_delay)) != 0) {
-        perror("setsockopt");
-        exit(1);
-    }
-
     do {
         sem_t go;
         if (sem_init(&go, 0, nthreads) != 0) {
@@ -134,7 +123,18 @@ int main(int argc, char *argv[]) {
         for (i = 0; i < nthreads; i++) {
 
             s = &states[i];
-            s->handle = clnttcp_create(&serv_addr, programm, version, &sock_fd, 0, 0);
+
+            s->sock_fd = socket(AF_INET, SOCK_STREAM, 0);
+            if (s->sock_fd < 0) {
+                perror("socket");
+                exit(1);
+            }
+
+            if (setsockopt(s->sock_fd, IPPROTO_TCP, TCP_NODELAY, &no_delay, sizeof(no_delay)) != 0) {
+                perror("setsockopt");
+                exit(1);
+            }
+            s->handle = clnttcp_create(&serv_addr, programm, version, &s->sock_fd, 0, 0);
 
             if (s->handle == NULL) {
                 clnt_pcreateerror("clnt failed");
@@ -168,6 +168,7 @@ int main(int argc, char *argv[]) {
 
         for (i = 0; i < nthreads; i++) {
             clnt_destroy(states[i].handle);
+            close(states[i].sock_fd);
         }
 
     } while(--nloops > 0);
